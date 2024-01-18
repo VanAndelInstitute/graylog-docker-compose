@@ -4,17 +4,21 @@ services:
   mongodb:
     image: "mongo:5.0"
     volumes:
-      - "mongodb_data:/data/db"
+      - "/data/graylog/mongo:/data/db"
     restart: "on-failure"
+    network_mode: "host" 
+    environment:
+      TZ: "America/Detroit"
 
   datanode:
     image: "${DATANODE_IMAGE:-graylog/graylog-datanode:5.2}"
-    hostname: "datanode"
+    hostname: "graylog.hpc.vai.org"
     environment:
+      TZ: "America/Detroit"
       GRAYLOG_DATANODE_NODE_ID_FILE: "/var/lib/graylog-datanode/node-id"
       GRAYLOG_DATANODE_PASSWORD_SECRET: "${GRAYLOG_PASSWORD_SECRET:?Please configure GRAYLOG_PASSWORD_SECRET in the .env file}"
       GRAYLOG_DATANODE_ROOT_PASSWORD_SHA2: "${GRAYLOG_ROOT_PASSWORD_SHA2:?Please configure GRAYLOG_ROOT_PASSWORD_SHA2 in the .env file}"
-      GRAYLOG_DATANODE_MONGODB_URI: "mongodb://mongodb:27017/graylog"
+      GRAYLOG_DATANODE_MONGODB_URI: "mongodb://localhost:27017/graylog"
     ulimits:
       memlock:
         hard: -1
@@ -22,12 +26,9 @@ services:
       nofile:
         soft: 65536
         hard: 65536
-    ports:
-      - "8999:8999/tcp"   # DataNode API
-      - "9200:9200/tcp"
-      - "9300:9300/tcp"
+    network_mode: "host" 
     volumes:
-      - "graylog-datanode:/var/lib/graylog-datanode"
+      - "/data/graylog/datanode:/var/lib/graylog-datanode"
     restart: "on-failure"
 
   graylog:
@@ -38,32 +39,25 @@ services:
         condition: "service_started"
     entrypoint: "/usr/bin/tini --  /docker-entrypoint.sh"
     environment:
+      TZ: "America/Detroit"
       GRAYLOG_NODE_ID_FILE: "/usr/share/graylog/data/data/node-id"
       GRAYLOG_PASSWORD_SECRET: "${GRAYLOG_PASSWORD_SECRET:?Please configure GRAYLOG_PASSWORD_SECRET in the .env file}"
       GRAYLOG_ROOT_PASSWORD_SHA2: "${GRAYLOG_ROOT_PASSWORD_SHA2:?Please configure GRAYLOG_ROOT_PASSWORD_SHA2 in the .env file}"
       GRAYLOG_HTTP_BIND_ADDRESS: "0.0.0.0:9000"
       GRAYLOG_HTTP_EXTERNAL_URI: "http://localhost:9000/"
-      GRAYLOG_MONGODB_URI: "mongodb://mongodb:27017/graylog"
-    ports:
-    - "5044:5044/tcp"   # Beats
-    - "5140:5140/udp"   # Syslog
-    - "5140:5140/tcp"   # Syslog
-    - "5555:5555/tcp"   # RAW TCP
-    - "5555:5555/udp"   # RAW TCP
-    - "9000:9000/tcp"   # Server API
-    - "12201:12201/tcp" # GELF TCP
-    - "12201:12201/udp" # GELF UDP
-    #- "10000:10000/tcp" # Custom TCP port
-    #- "10000:10000/udp" # Custom UDP port
-    - "13301:13301/tcp" # Forwarder data
-    - "13302:13302/tcp" # Forwarder config
+      GRAYLOG_MONGODB_URI: "mongodb://localhost:27017/graylog"
+      GRAYLOG_ELASTISEARCH_HOSTS: "https://graylog.hpc.vai.org:9200"
+    network_mode: "host" 
     volumes:
-      - "graylog_data:/usr/share/graylog/data/data"
-      - "graylog_journal:/usr/share/graylog/data/journal"
+      - "/data/graylog/data:/usr/share/graylog/data/data:rw"
+      - "/data/graylog/journal:/usr/share/graylog/data/journal:rw"
     restart: "on-failure"
 
-volumes:
-  mongodb_data:
-  graylog-datanode:
-  graylog_data:
-  graylog_journal:
+  cftunnel:
+    container_name: cloudflared-graylog
+    image: cloudflare/cloudflared
+    restart: unless-stopped
+    command: tunnel run
+    network_mode: "host" 
+    environment:
+      TUNNEL_TOKEN: "${CLOUDFLARE_TUNNELKEY:?Please configure CLOUDFLARE_TUNNELKEY in the .env file}"
